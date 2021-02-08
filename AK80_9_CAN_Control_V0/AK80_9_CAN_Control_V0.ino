@@ -32,25 +32,28 @@ float t_out = 0.0f;
 //CAN instance
 Serial_CAN can;
 
-long unsigned int can_id = 0x55;
+long unsigned int can_id = 0x1;
 //Data buffer for CAN messages
 unsigned char data[8] = {1,2,3,4,5,6,7,8};
 int command = 0;
+bool motor_on = false;
 
 void setup() {
   Serial.begin(9600);
-  can.begin(115200);
+  can.begin(57600);
   while (!Serial) {};
   delay(500);
-  can.baudRate('4'); //115200
-  can.canRate('18'); //1Mbps
+  //can.baudRate('4'); //115200
+  //can.canRate('18'); //1Mbps
   Serial.println("Begin!");
+  sendZero();
+  ExitMotorMode();
 }
 
 void loop() {
   while (Serial.available()) {
     command = Serial.read();
-    float p_step = 0.1;
+    float p_step = 0.01;
     switch (command) {
       case '1':
         p_in = p_in + p_step;
@@ -69,61 +72,70 @@ void loop() {
         Serial.println("Stopped Motor Mode!");
         break;
       case '5':
-        Zero();
+        setZero();
         Serial.println("Zero Motor");
         break;
       case '6':
-        can.debugMode();
-    }
+        pack_cmd();
+        Serial.println("Sent Command");
+        break;
+      case '7':
+        if (motor_on) 
+        {
+          Serial.println("Start Pos Ramp Sequence!");
+          for (int i=0;i<85;i++)
+          {
+            p_in=p_in + p_step;
+            pack_cmd();
+            Serial.print("p_in: ");
+            Serial.println(p_in);
+            Serial.print("i: ");
+            Serial.println(i);
+            delay(2);
+          }
+        }
+        else 
+        {
+          Serial.println("Motor must be on!");
+        }
+        break;
+      case '8':
+        sendZero();
+        break;
+    } 
   }
-
-  //send CAN
-  pack_cmd();
+  if (motor_on) 
+  {
+    pack_cmd();
+  }
+  /*
   
   if (can.recv(&can_id, data) == '1') {
     unpack_reply();
-  }
+  }*/
 }
 
   void EnterMotorMode() {
-    //Enter Motor Mode (Enable)
-    byte buf[8];
-    buf[0] = 0xFF;
-    buf[1] = 0xFF;
-    buf[2] = 0xFF;
-    buf[3] = 0xFF;
-    buf[4] = 0xFF;
-    buf[5] = 0xFF;
-    buf[6] = 0xFF;
-    buf[7] = 0xFC;
-    //Send CAN message
-    can.send(can_id, 0, 0, 8, buf);
+    unsigned char enable_data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFC};
+    can.send(can_id, 0, 0, 8, enable_data);
+    motor_on = true;
   }
   void ExitMotorMode() {
-    byte buf[8];
-    buf[0] = 0xFF;
-    buf[1] = 0xFF;
-    buf[2] = 0xFF;
-    buf[3] = 0xFF;
-    buf[4] = 0xFF;
-    buf[5] = 0xFF;
-    buf[6] = 0xFF;
-    buf[7] = 0xFD;
-    //Send CAN message
-    can.send(can_id, 0, 0, 8, buf);
+    unsigned char disable_data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFD};
+    can.send(can_id, 0, 0, 8, disable_data);
+    motor_on = false;
   }
-  void Zero() {
-    byte buf[8];
-    buf[0] = 0xFF;
-    buf[1] = 0xFF;
-    buf[2] = 0xFF;
-    buf[3] = 0xFF;
-    buf[4] = 0xFF;
-    buf[5] = 0xFF;
-    buf[6] = 0xFF;
-    buf[7] = 0xFD;
-    //Send CAN message
-    can.send(can_id, 0, 0, 8, buf);
+  void setZero() {
+    unsigned char zero_data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE};
+    can.send(can_id, 0, 0, 8, zero_data);
+  }
+  void sendZero() {
+    if (!motor_on) 
+    {
+      EnterMotorMode();
+    }
+    p_in = 0;
+    pack_cmd();
   }
  void pack_cmd() {
   byte buf[8];
